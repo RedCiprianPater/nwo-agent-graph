@@ -1,0 +1,83 @@
+name: Agent Expand + Robot Ingest
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  expand-and-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps for BitNet build
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake clang-18 ninja-build wget
+
+      # Cache both model weights and compiled BitNet binary
+      - name: Cache BitNet model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: models/BitNet-b1.58-2B-4T
+          key: bitnet-model-2b-4t-v1
+
+      - name: Cache BitNet build
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            BitNet/build
+            BitNet/3rdparty
+          key: bitnet-build-${{ runner.os }}-v2
+
+      - name: Clone and build BitNet
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          git clone --recursive https://github.com/microsoft/BitNet.git
+          cd BitNet
+          pip install -r requirements.txt
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_NATIVE=ON
+          cmake --build build --config Release -j$(nproc)
+          echo "BitNet built successfully"
+
+      - name: Download BitNet model
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          pip install huggingface-hub
+          huggingface-cli download microsoft/BitNet-b1.58-2B-4T-gguf \
+            --local-dir models/BitNet-b1.58-2B-4T
+          echo "Model downloaded"
+
+      - name: Install Python deps
+        run: pip install supabase httpx
+
+      - name: Run expansion + ingestion
+        env:
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+          NWO_API_KEY:         ${{ secrets.NWO_API_KEY }}
+          HF_API_KEY:          ${{ secrets.HF_API_KEY }}
+          BITNET_MODEL_PATH:   models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf
+          BITNET_BIN:          BitNet/build/bin/llama-cli
+        run: |
+          cd scripts
+          python agent_expand.py
+
+      - name: Upload expansion log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expansion-log-${{ github.run_id }}
+          path: scripts/*.log
+          if-no-files-found: ignore

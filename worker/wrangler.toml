@@ -1,0 +1,11 @@
+name = "nwo-agent-graph-robot-api"
+main = "robot-api.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+# Set secrets via: wrangler secret put SUPABASE_URL etc.
+# Do NOT put secrets here
+
+[[routes]]
+pattern = "robot-api.YOUR_DOMAIN.workers.dev/*"
+zone_name = "YOUR_DOMAIN"

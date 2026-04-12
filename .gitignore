@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+*.gguf
+models/
+BitNet/build/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.log
+data/
+/frontend/dist/
+wrangler.toml.local
